@@ -1879,6 +1879,27 @@ def HandleCommandModeChar(char):
     elif c == "gd":
         N10X.Editor.ExecuteCommand("GotoSymbolDefinition")
 
+#----MPEDIT-MyCustomShortcuts
+    elif c == "gF":
+        N10X.Editor.ExecuteCommand("FindReplaceInFile");
+    elif c == "gf":
+        N10X.Editor.ExecuteCommand("FindInFile");
+    elif c == "ga":
+        N10X.Editor.ExecuteCommand("Search");
+    elif c == "gd":
+        N10X.Editor.ExecuteCommand("GotoSymbolDefinition");
+    elif c == "gr":
+        N10X.Editor.ExecuteCommand("FindSymbolReferences");
+    elif c == "gs":
+        N10X.Editor.ExecuteCommand("FindSymbol");
+    elif c == "gm":
+        N10X.Editor.ExecuteCommand("FindFunction");
+    elif c == "go":
+        N10X.Editor.ExecuteCommand("FindFile");
+    elif c == "gl":
+        N10X.Editor.ExecuteCommand("GoToLine");
+#----MPEDIT-
+
     else:
         print("[vim] Unknown command!")
 
@@ -1915,6 +1936,18 @@ def HandleCommandModeKey(key, shift, control, alt):
             N10X.Editor.ExecuteCommand("ToggleComment")
             N10X.Editor.ClearSelection()
         SetCursorPos(x=x, y=y)
+
+#----MPEDIT-MyCustomShortcuts
+    elif key == "H" and alt:
+        MoveToFirstNonWhitespace()
+    elif key == "L" and alt:
+        MoveToEndOfLine()
+ 
+    elif key == "K" and alt:
+        MoveToPreviousEmptyLine()
+    elif key == "J" and alt:
+        MoveToNextEmptyLine()
+#----MPEDIT-
 
     elif key == "Tab" and shift:
         N10X.Editor.ExecuteCommand("PrevPanelTab")
