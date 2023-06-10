@@ -436,8 +436,15 @@ class RDBG_Session:
 
     def open(self)->bool:
         try:
-            debug_cmd = Editor.GetDebugCommand().strip()
-            debug_args = Editor.GetDebugCommandArgs().strip()
+            debug_cmd = Editor.GetDebugCommand()
+            
+#----MPEDIT-MyCustomShortcuts
+            common_args = Editor.GetSetting("Custom.ClientCommonArgs")
+            client_args = Editor.GetSetting("Custom.ClientOneArgs") 
+            debug_args = "{} {}".format(common_args, client_args).strip()
+            #debug_args = Editor.GetDebugCommandArgs().strip()
+#----MPEDIT-
+
             debug_cwd = Editor.GetDebugCommandCwd().strip()
 
             if debug_cmd == '':
