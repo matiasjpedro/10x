@@ -280,9 +280,9 @@ def GetClipboardValue():
             win32clipboard.CloseClipboard()
             break
         except Exception as ex:
-            if err.winerror == 5:  # access denied
+            if ex.winerror == 5:  # access denied
                 time.sleep( 0.01 )
-            elif err.winerror == 1418:  # doesn't have board open
+            elif ex.winerror == 1418:  # doesn't have board open
                 pass
             else:
                 pass
@@ -1174,6 +1174,9 @@ def HandleCommandModeChar(char):
         for i in range(repeat_count):
             MoveToTokenEnd()
 
+    elif c == "_":
+        MoveToFirstNonWhitespace()
+        
     elif c == "0":
         MoveToStartOfLine()
 
@@ -1458,6 +1461,16 @@ def HandleCommandModeChar(char):
         N10X.Editor.ExecuteCommand("Cut")
         N10X.Editor.PopUndoGroup()
         should_save = True
+        
+    elif c == "d_":
+        N10X.Editor.PushUndoGroup()
+        x, y = N10X.Editor.GetCursorPos()
+        end_x = max(0, x - 1)
+        first_x, first_y = GetFirstNonWhitespace(y) 
+        SetSelection((first_x, y), (end_x, y))
+        N10X.Editor.ExecuteCommand("Cut")
+        N10X.Editor.PopUndoGroup()
+        should_save = True
 
     elif c == "D" or c == "d$":
         N10X.Editor.PushUndoGroup()
@@ -1549,14 +1562,14 @@ def HandleCommandModeChar(char):
 
     elif c == "r":
         Unhilight()
-        EnterInsertMode()
         g_SingleReplace = True
+        EnterInsertMode()
         should_save = True
 
     elif c == "R":
         Unhilight()
-        EnterInsertMode()
         g_MultiReplace = True
+        EnterInsertMode()
         should_save = True
         
     elif c == "I":
@@ -1711,6 +1724,16 @@ def HandleCommandModeChar(char):
         N10X.Editor.PushUndoGroup()
         x, y = N10X.Editor.GetCursorPos()
         SetSelection((0, y), (max(0, x - 1), y))
+        N10X.Editor.ExecuteCommand("Cut")
+        EnterInsertMode()
+        N10X.Editor.PopUndoGroup()
+        should_save = True
+        
+    elif c == "c_":
+        N10X.Editor.PushUndoGroup()
+        x, y = N10X.Editor.GetCursorPos()
+        first_x, first_y = GetFirstNonWhitespace(y) 
+        SetSelection((first_x, y), (max(0, x - 1), y))
         N10X.Editor.ExecuteCommand("Cut")
         EnterInsertMode()
         N10X.Editor.PopUndoGroup()
@@ -1914,6 +1937,13 @@ def HandleCommandModeChar(char):
         SetSelection((0, y), (max(0, x - 1), y))
         N10X.Editor.ExecuteCommand("Copy")
         SetCursorPos(0, y)
+        
+    elif c == "y_":
+        x, y = N10X.Editor.GetCursorPos()
+        first_x, first_y = GetFirstNonWhitespace(y) 
+        SetSelection((first_x, y), (max(0, x - 1), y))
+        N10X.Editor.ExecuteCommand("Copy")
+        SetCursorPos(first_x, y)
 
     elif c == "y$":
         x, y = N10X.Editor.GetCursorPos()
@@ -2248,18 +2278,19 @@ def HandleInsertModeChar(char):
     global g_MultiReplace
     global g_InsertBuffer
 
+    if not g_PerformingDot:
+        RecordCharKey(g_InsertBuffer, char)
+
     if g_SingleReplace or g_MultiReplace:
         x, y = N10X.Editor.GetCursorPos()
         SetSelection((x, y), (x, y))
         N10X.Editor.ExecuteCommand("Cut")
-    
+
     if g_SingleReplace:
         N10X.Editor.InsertText(char)
         EnterCommandMode() #will pop undo
         return True
 
-    if not g_PerformingDot:
-        RecordCharKey(g_InsertBuffer, char)
     return False
 
 #------------------------------------------------------------------------
@@ -2329,6 +2360,10 @@ def HandleVisualModeChar(char):
         SetCursorPos(start[0], start[1])
         EnterInsertMode()
         should_save = True
+    
+    elif c == "_":
+        MoveToFirstNonWhitespace()
+
 
     elif c == "0":
         MoveToStartOfLine()
@@ -2516,13 +2551,13 @@ def PlaybackBuffer(buffer):
 
 #------------------------------------------------------------------------
 # Called when a key is pressed.
-# Return true to surpress the key
+# Return true to supress the key
 def OnInterceptKey(key, shift, control, alt):
     global g_HandleKeyIntercepts
     if not g_HandleKeyIntercepts:
         return False
 
-    ret = False
+    supress = False
     if N10X.Editor.TextEditorHasFocus():
         global g_RecordingName
         global g_NamedBuffers
@@ -2533,27 +2568,27 @@ def OnInterceptKey(key, shift, control, alt):
         global g_Mode
         match g_Mode:
             case Mode.INSERT:
-                ret = HandleInsertModeKey(key, shift, control, alt)
+                supress = HandleInsertModeKey(key, shift, control, alt)
             case Mode.COMMAND:
-                ret = HandleCommandModeKey(key, shift, control, alt)
+                supress = HandleCommandModeKey(key, shift, control, alt)
             case Mode.VISUAL:
-                ret = HandleCommandModeKey(key, shift, control, alt)
+                supress = HandleCommandModeKey(key, shift, control, alt)
             case Mode.VISUAL_LINE:
-                ret = HandleCommandModeKey(key, shift, control, alt)
+                supress = HandleCommandModeKey(key, shift, control, alt)
         UpdateCursorMode()
         
-    return ret
+    return supress
 
 #------------------------------------------------------------------------
 # Called when a char is to be inserted into the text editor.
 # Return true to surpress the char key.
-# If we are in command mode surpress all char keys
+# If we are in command mode supress all char keys
 def OnInterceptCharKey(c):
     global g_HandleCharKeyIntercepts
     if not g_HandleCharKeyIntercepts:
         return False
 
-    ret = False
+    supress = False
     if N10X.Editor.TextEditorHasFocus():
         global g_RecordingName
         global g_NamedBuffers
@@ -2561,11 +2596,11 @@ def OnInterceptCharKey(c):
         if g_RecordingName != "":
             RecordCharKey(g_NamedBuffers[g_RecordingName],c)
 
-        ret = True
+        supress = True
         global g_Mode
         match g_Mode:
             case Mode.INSERT:
-                ret = HandleInsertModeChar(c)
+                supress = HandleInsertModeChar(c)
             case Mode.COMMAND:
                 HandleCommandModeChar(c)
             case Mode.VISUAL:
@@ -2573,7 +2608,7 @@ def OnInterceptCharKey(c):
             case Mode.VISUAL_LINE:
                 HandleVisualModeChar(c)
         UpdateCursorMode()
-    return ret
+    return supress
 
 #------------------------------------------------------------------------
 def HandleCommandPanelCommand(command):
