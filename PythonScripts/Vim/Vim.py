@@ -2154,9 +2154,11 @@ def HandleCommandModeKey(key, shift, control, alt):
         MoveToEndOfLine()
  
     elif key == "K" and alt:
-        MoveToPreviousEmptyLine()
+        MoveCursorPos(y_delta=int(-N10X.Editor.GetVisibleLineCount()/4))
+        N10X.Editor.ScrollCursorIntoView()
     elif key == "J" and alt:
-        MoveToNextEmptyLine()
+        MoveCursorPos(y_delta=int(N10X.Editor.GetVisibleLineCount()/4))
+        N10X.Editor.ScrollCursorIntoView()
 #----MPEDIT-
 
     elif key == "Tab" and shift:
