@@ -2183,6 +2183,9 @@ def HandleCommandModeChar(char):
         N10X.Editor.ExecuteCommand("GotoSymbolDefinition")
 
 #----MPEDIT-MyCustomShortcuts
+    elif c == "gR":
+        EnterInsertMode();
+        N10X.Editor.ExecuteCommand("RenameSymbol");
     elif c == "gF":
         N10X.Editor.ExecuteCommand("FindReplaceInFile");
     elif c == "gf":
@@ -2684,6 +2687,14 @@ def OnInterceptKey(key, shift, control, alt):
             case Mode.VISUAL_LINE:
                 supress = HandleCommandModeKey(key, shift, control, alt)
         UpdateCursorMode()
+    else:
+#----MPEDIT-FixForTabNotWorking
+        if key == "Tab" and shift:
+            N10X.Editor.ExecuteCommand("PrevPanelTab")
+
+        elif key == "Tab":
+            N10X.Editor.ExecuteCommand("NextPanelTab")
+#----MPEDIT-
         
     return supress
 
