@@ -25,8 +25,6 @@ class Mode:
 #------------------------------------------------------------------------
 g_Mode = Mode.INSERT
 
-# Vim bindings are temporarily disabled using :dv (DisableVim), they can be re-enabled using :ev (EnableVim)
-g_VimSuspended = False
 
 # position of the cursor when visual mode was entered
 g_VisualModeStartPos = None
@@ -756,10 +754,39 @@ def MoveToEndOfLine():
     SetCursorPos(x=GetLineLength() - 1)
     
 #------------------------------------------------------------------------
+def FindPreviousParagraphBegin():
+    x, y = N10X.Editor.GetCursorPos()
+
+    while y > 0 and N10X.Editor.GetLine(y).isspace():
+      y -= 1
+
+    while y > 0 :
+      y -= 1
+      text = N10X.Editor.GetLine(y)
+      if text.isspace():
+        return y
+    return 0
+
+#------------------------------------------------------------------------
+def FindNextParagraphEnd():
+    line_count = N10X.Editor.GetLineCount()
+    x, y = N10X.Editor.GetCursorPos()
+
+    while y < line_count - 1 and N10X.Editor.GetLine(y + 1).isspace():
+      y += 1
+
+    while y < line_count - 1:
+      text = N10X.Editor.GetLine(y + 1)
+      if not text or text.isspace():
+        return y
+      y += 1
+    return y
+
+#------------------------------------------------------------------------
 def FindPreviousEmptyLine():
     x, y = N10X.Editor.GetCursorPos()
     while y > 0 :
-      y = y - 1
+      y -= 1
       text = N10X.Editor.GetLine(y)
       if text.isspace():
         return y
@@ -769,26 +796,28 @@ def FindPreviousEmptyLine():
 def FindNextEmptyLine():
     line_count = N10X.Editor.GetLineCount()
     x, y = N10X.Editor.GetCursorPos()
+
     while y < line_count - 1:
       text = N10X.Editor.GetLine(y + 1)
       if not text or text.isspace():
         return y
-      y = y + 1
+      y += 1
     return y
 
 #------------------------------------------------------------------------
-def MoveToPreviousEmptyLine():
-    SetCursorPos(0, FindPreviousEmptyLine())
+def MoveToPreviousParagraphBegin():
+    SetCursorPos(0, FindPreviousParagraphBegin())
 
 #------------------------------------------------------------------------
-def MoveToNextEmptyLine():
+def MoveToNextParagraphEnd():
     line_count = N10X.Editor.GetLineCount()
-    y = FindNextEmptyLine()
+    y = FindNextParagraphEnd()
     if y != line_count:
         SetCursorPos(0, y + 1)
     else:
         SetCursorPos(GetLineLength(line_count - 1) - 1, line_count)
 
+   
 #------------------------------------------------------------------------
 def GetAroundParagraphSelection():
     line_count = N10X.Editor.GetLineCount()
@@ -1121,6 +1150,38 @@ def SelectOrMoveInsideQuote(c, insert_after_move=False, whitespace=False):
             return False
 
 #------------------------------------------------------------------------
+def MergeLines():
+    SetCursorPos(x=GetLineLength(), max_offset=0)
+    N10X.Editor.InsertText(" ")
+    N10X.Editor.ExecuteCommand("Delete")
+
+#------------------------------------------------------------------------
+def MergeLinesTrimIndentation():
+    x, y = N10X.Editor.GetCursorPos()
+    startx = x
+    startlinelen = GetLineLength(y)
+    line = GetLine(y)
+    SetCursorPos(x=startlinelen, max_offset=0)
+    N10X.Editor.ExecuteCommand("Delete")
+    x = startlinelen
+    while x > 0 and IsWhitespaceChar(line[x]):
+        x -= 1
+    if not IsWhitespaceChar(line[x]):
+        x += 1
+    clearx = x
+    line = GetLine(y)
+    newlinelen = GetLineLength(y)
+    x = startlinelen
+    while x < newlinelen and IsWhitespaceChar(line[x]):
+        x += 1
+    if clearx != x:
+        x -= 1
+        SetSelection((clearx,y), (x,y))
+        N10X.Editor.ExecuteCommand("Delete")
+    N10X.Editor.InsertText(" ")
+    SetCursorPos(startx,y)
+
+#------------------------------------------------------------------------
 # Key Intercepting
 
 #------------------------------------------------------------------------
@@ -1253,15 +1314,15 @@ def HandleCommandModeChar(char):
         MoveToEndOfLine()
 
     elif c == "{":
-       MoveToPreviousEmptyLine()
+        MoveToPreviousParagraphBegin()
 
     elif c == "}":
-        MoveToNextEmptyLine()
+        MoveToNextParagraphEnd()
 
     elif c == "''":
         if g_LastJumpPoint:
             SetCursorPos(g_LastJumpPoint[0], g_LastJumpPoint[1])
-    
+     
     elif c == "'":
         return
 
@@ -1312,6 +1373,17 @@ def HandleCommandModeChar(char):
         g_JumpMap[c[1]] = N10X.Editor.GetCursorPos()
 
     # misc
+
+    elif c == "~":
+        x, y = N10X.Editor.GetCursorPos()
+        line = GetLine()
+        length = GetLineLength()
+        if length > 0:
+            N10X.Editor.PushUndoGroup()
+            line = line[:x] + line[x].swapcase() + line[x + 1:]
+            N10X.Editor.SetLine(y, line)
+            N10X.Editor.PopUndoGroup()
+        should_save = True
 
     elif c == "z":
         return
@@ -1490,7 +1562,7 @@ def HandleCommandModeChar(char):
         for i in range(repeat_count):
             x, y = N10X.Editor.GetCursorPos()
             for i in range(count):
-                MoveToPreviousEmptyLine()
+                MoveToPreviousParagraphBegin()
                 x, end_y = N10X.Editor.GetCursorPos()
             SetLineSelection(y, end_y)
             N10X.Editor.ExecuteCommand("Cut")
@@ -1504,7 +1576,7 @@ def HandleCommandModeChar(char):
         for i in range(repeat_count):
             x, y = N10X.Editor.GetCursorPos()
             for i in range(count):
-                MoveToNextEmptyLine()
+                MoveToNextParagraphEnd()
                 x, end_y = N10X.Editor.GetCursorPos()
             SetLineSelection(y, end_y)
             N10X.Editor.ExecuteCommand("Cut")
@@ -1920,11 +1992,17 @@ def HandleCommandModeChar(char):
     elif (m := re.match("c" + g_RepeatMatch, c)):
         return
 
+    elif c == "gJ":
+        N10X.Editor.PushUndoGroup()
+        for i in range(repeat_count):
+            MergeLines()
+        N10X.Editor.PopUndoGroup()
+        should_save = True
+
     elif c == "J":
         N10X.Editor.PushUndoGroup()
-        SetCursorPos(x=GetLineLength(), max_offset=0)
-        N10X.Editor.InsertText(" ")
-        N10X.Editor.ExecuteCommand("Delete")
+        for i in range(repeat_count):
+            MergeLinesTrimIndentation()
         N10X.Editor.PopUndoGroup()
         should_save = True
 
@@ -2275,6 +2353,12 @@ def HandleCommandModeKey(key, shift, control, alt):
     elif g_PaneSwap:
         pass
 
+    # Turn Vim bindings off
+    elif key == "F12" and control and shift:
+        print("[vim] vim bindings disabled")
+        N10X.Editor.RemoveSettingOverride("ReverseFindSelection")
+        EnterSuspendedMode()
+
     elif key == "/" and control:
         x, y = N10X.Editor.GetCursorPos()
         if InVisualMode():
@@ -2356,13 +2440,17 @@ def HandleCommandModeKey(key, shift, control, alt):
     elif key == "I" and control:
         N10X.Editor.ExecuteCommand("NextLocation")
 
+    elif key == "Delete" and not control:
+        N10X.Editor.ExecuteCommand("Delete")
+        pos = N10X.Editor.GetCursorPos()
+        SetCursorPos(pos[0],pos[1])
+
     else:
         handled = False
 
         pass_through = \
             control or \
             alt or \
-            key == "Delete" or \
             key == "Backspace" or \
             key == "Up" or \
             key == "Down" or \
@@ -2515,10 +2603,10 @@ def HandleVisualModeChar(char):
         MoveToEndOfFile()
 
     elif c == "{":
-        MoveToPreviousEmptyLine()
+        MoveToPreviousParagraphBegin()
 
     elif c == "}":
-        MoveToNextEmptyLine()
+        MoveToNextParagraphEnd()
 
     elif c == "g":
         return
@@ -2563,6 +2651,26 @@ def HandleVisualModeChar(char):
 
     elif c == "%":
         N10X.Editor.ExecuteCommand("MoveToMatchingBracket")
+
+    elif c == "gJ":
+        N10X.Editor.PushUndoGroup()
+        start, end = SubmitVisualModeSelection()
+        SetCursorPos(start[0], start[1])
+        line_count = max(1, end[1] - start[1] - 1)
+        for i in range(line_count):
+            MergeLines()
+        N10X.Editor.PopUndoGroup()
+        should_save = True
+
+    elif c == "J":
+        N10X.Editor.PushUndoGroup()
+        start, end = SubmitVisualModeSelection()
+        SetCursorPos(start[0], start[1])
+        line_count = max(1, end[1] - start[1] - 1)
+        for i in range(line_count):
+            MergeLinesTrimIndentation()
+        N10X.Editor.PopUndoGroup()
+        should_save = True
 
     elif c == ">":
         old_Mode = g_Mode
@@ -2649,6 +2757,24 @@ def HandleVisualModeChar(char):
             start, end = sel
             SetVisualModeSelection(start, end)
 
+    elif c == "~":
+        N10X.Editor.PushUndoGroup()
+        start, end = N10X.Editor.GetCursorSelection(cursor_index=1)
+        current_line_y = start[1]
+        while current_line_y <= end[1]:
+            line = GetLine(current_line_y)
+            length = GetLineLength(current_line_y)
+            if length > 0:
+                begin_x = start[0] if current_line_y == start[1] else 0
+                end_x = end[0] if current_line_y == end[1] else length - 1
+                line = line[:begin_x] + line[begin_x:end_x].swapcase() + line[end_x:]
+                N10X.Editor.SetLine(current_line_y, line)
+            current_line_y += 1
+        N10X.Editor.PopUndoGroup()
+        SetCursorPos(start[0], start[1])
+        EnterCommandMode()
+        should_save = True
+
     else:
         print("[vim] Unknown command!")
     
@@ -2656,11 +2782,12 @@ def HandleVisualModeChar(char):
     UpdateVisualModeSelection()
 
 #------------------------------------------------------------------------
-def HandleSuspendedModeChar(char):
+def HandleSuspendedModeKey(key, shift, control, alt):
 
-    if char == ":":
-        N10X.Editor.ExecuteCommand("ShowCommandPanel")
-        N10X.Editor.SetCommandPanelText(":")
+    if key == "F12" and control and shift:
+        print("[vim] vim bindings enabled")
+        N10X.Editor.OverrideSetting("ReverseFindSelection","true")
+        EnterCommandMode()
         return True
 
     return False
@@ -2748,6 +2875,8 @@ def OnInterceptKey(key, shift, control, alt):
                 supress = HandleCommandModeKey(key, shift, control, alt)
             case Mode.VISUAL_LINE:
                 supress = HandleCommandModeKey(key, shift, control, alt)
+            case Mode.SUSPENDED:
+                supress = HandleSuspendedModeKey(key, shift, control, alt)
         UpdateCursorMode()
     else:
 #----MPEDIT-FixForTabNotWorking
@@ -2789,20 +2918,25 @@ def OnInterceptCharKey(c):
             case Mode.VISUAL_LINE:
                 HandleVisualModeChar(c)
             case Mode.SUSPENDED:
-                supress = HandleSuspendedModeChar(c)
+                supress = False
+
         UpdateCursorMode()
     return supress
 
 #------------------------------------------------------------------------
 def HandleCommandPanelCommand(command):
-    global g_VimSuspended
 
     if command == ":sp":
-        print("[vim] "+command+" (split) unimplemented")
+        x, y = N10X.Editor.GetCursorPos()
+        N10X.Editor.ExecuteCommand("DuplicatePanel")
+        N10X.Editor.ExecuteCommand("MovePanelDown")
+        SetCursorPos(x,y)
         return True
     
     if command == ":vsp":
-        print("[vim] "+command+" (vertical split) unimplemented")
+        x, y = N10X.Editor.GetCursorPos()
+        N10X.Editor.ExecuteCommand("DuplicatePanelRight")
+        SetCursorPos(x,y)
         return True
 
     if command == ":w":
@@ -2827,20 +2961,6 @@ def HandleCommandPanelCommand(command):
         N10X.Editor.ExecuteCommand("CloseFile")
         return True
     
-    # Disable Vim bindings
-    if command == ":dv":
-        print("[vim] vim bindings disabled")
-        N10X.Editor.RemoveSettingOverride("ReverseFindSelection")
-        EnterSuspendedMode()
-        return True
-     
-    # Enable Vim bindings
-    if command == ":ev":
-        print("[vim] vim bindings enabled")
-        N10X.Editor.OverrideSetting("ReverseFindSelection","true")
-        EnterCommandMode()
-        return True
-    
     split = command.split(":")
     if len(split) == 2 and split[1].isdecimal(): 
         SetCursorPos(y=int(split[1]) - 1)
@@ -2849,11 +2969,10 @@ def HandleCommandPanelCommand(command):
 #------------------------------------------------------------------------
 def EnableVim():
     global g_VimEnabled
-    global g_VimSuspended
     global g_VimOverrideKeybindings
     global g_SneakEnabled
 
-    enable_vim = N10X.Editor.GetSetting("Vim") == "true" and not g_VimSuspended
+    enable_vim = N10X.Editor.GetSetting("Vim") == "true"
     if N10X.Editor.GetSetting("VimOverrideKeybindings") == "false":
         g_VimOverrideKeybindings = False;
 

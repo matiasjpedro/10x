@@ -1,7 +1,7 @@
 '''
 RemedyBG debugger integration for 10x (10xeditor.com) 
 RemedyBG: https://remedybg.handmade.network/ (should be above 0.3.8)
-Version: 0.10.3
+Version: 0.10.4
 Original Script author: septag@discord
 
 To get started go to Settings.10x_settings, and enable the hook, by adding this line:
@@ -46,6 +46,9 @@ Extras:
     - RDBG_StepOut: Steps out of the current line when debugging, also updates the cursor position in 10x according to position in remedybg
 
 History:
+  0.10.4
+    - Fix a recursive error bug, when trying to close the connection on errors in send_command
+
   0.10.3:
     - Gracefully quitting RemedyBG 
 
@@ -222,7 +225,7 @@ class RDBG_Command(IntEnum):
     RESTART_DEBUGGING = 303
     STEP_INTO_BY_LINE = 307
     STEP_OVER_BY_LINE = 309
-    STEP_OUT = 311,
+    STEP_OUT = 311
     CONTINUE_EXECUTION = 312
     RUN_TO_FILE_AT_LINE = 313
     ADD_BREAKPOINT_AT_FILENAME_LINE = 604
@@ -372,7 +375,7 @@ class RDBG_Session:
             pass
         elif cmd == RDBG_Command.STEP_OVER_BY_LINE:
             pass
-        elif cmd == RDBG_Command.STEP_OVER_BY_LINE:
+        elif cmd == RDBG_Command.STEP_OUT:
             pass
         elif cmd == RDBG_Command.STOP_DEBUGGING:
             pass
@@ -416,7 +419,7 @@ class RDBG_Session:
             out_data = win32pipe.TransactNamedPipe(self.cmd_pipe, cmd_buffer.getvalue(), 8192, None)
         except pywintypes.error as pipe_error:
             print('RDBG', pipe_error)
-            self.close()
+            self.close(ignore_send_command=True)
             return 0
 
         out_buffer = io.BytesIO(out_data[1])		
@@ -544,8 +547,8 @@ class RDBG_Session:
         
         return True
 
-    def close(self):
-        if self.process is not None:
+    def close(self, ignore_send_command:bool = False):
+        if not ignore_send_command and self.process is not None:
             self.send_command(RDBG_Command.COMMAND_EXIT_DEBUGGER)
 
         if self.cmd_pipe:
@@ -561,6 +564,7 @@ class RDBG_Session:
             print('RDBG: RemedyBG quit with code: %i' % (self.process.returncode))
             self.process = None
 
+        self.target_state:RDBG_TargetState = RDBG_TargetState.NONE
         print("RDBG: Connection closed")
 
     def run(self):
@@ -687,7 +691,7 @@ class RDBG_Session:
                         pass
                     elif event_type == RDBG_EventType.EXIT_PROCESS:
                         exit_code:int = int.from_bytes(event_buffer.read(4), 'little')
-                        print('RDBG: Debugging terminted with exit code:', exit_code)
+                        print('RDBG: Debugging terminated with exit code:', exit_code)
                         self.target_state = RDBG_TargetState.NONE
 
                         if not _rdbg_options.stop_debug_on_build:
