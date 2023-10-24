@@ -2470,6 +2470,7 @@ def HandleCommandModeKey(key, shift, control, alt):
             key == "F10" or \
             key == "F11" or \
             key == "F12" or \
+            key == "`" or \
             key.startswith("Mouse")
 
     if handled or pass_through:
