@@ -1,7 +1,7 @@
 '''
 RemedyBG debugger integration for 10x (10xeditor.com) 
 RemedyBG: https://remedybg.handmade.network/ (should be above 0.3.8)
-Version: 0.11.4
+Version: 0.11.10
 Original Script author: septag@discord / septag@pm.me
 
 To get started go to Settings.10x_settings, and enable the hook, by adding this line:
@@ -19,13 +19,12 @@ RDBG_Options:
     - RemedyBG.WorkDir: Path that remedy will use as a working directory
     - RemedyBG.KeepSessionOnActiveChange: (default=False) when active project or config is changed, it leaves the previously opened RemedyBG session
                                            This is useful when you want to debug multiple binaries within a project like client/server apps
-    - RemedyBG.StartProcessExtraCommand: Extra 10x command that will be executed after process is started in RemedyBG
-    - RemedyBG.StopProcessExtraCommand: Extra 10x command that will be executed after process is stopped in RemedyBG
+    - RemedyBG.StartProcessExtraCommand: Extra 10x command that will be executed after process is started in RemedyBG. Several commands can be separated by semicolon.
+    - RemedyBG.StopProcessExtraCommand: Extra 10x command that will be executed after process is stopped in RemedyBG. Several commands can be separated by semicolon.
     - RemedyBG.BringToForegroundOnSuspended: (default=True) Bring debugger to front when debugging session is paused
 
 Commands:
-    - RDBG_StartDebugging: Same behavior as default StartDebugging. Launches remedybg if not opened before and runs the 
-                           executable in the debugger. 
+    - RDBG_StartDebugging: Same behavior as default StartDebugging. Launches remedybg if not opened before and runs the executable in the debugger. 
                            If "BuildBeforeStartDebugging" option is set, it builds it before running the session
                            If debugger is already running, it does nothing
                            If debugger is in suspend/pause state, it continues the debugger
@@ -50,6 +49,33 @@ RemedyBG sessions:
     and it will load that next time instead of starting a new session
 
 History:
+  0.11.10
+    - Fix for the stepper arrow. Now it shows where your program is actually at. Won't show the arrow for callstack walks and other things
+
+  0.11.9
+    - Now StepIn/StepOut starts debugging and steps into the program with the new RemedyBG update (0.3.9.8)
+    - Minor improvement to OpenDebugger command
+    - Debugger suspend event now works when we pause the program in RemedyBG (0.3.9.8)
+    - RestartDebugging starts the session if not it's started before
+
+  0.11.8
+    - Fixed bugs and improved `KeepSessionOnActiveChange` experience. Now when user switches from one workspace/config to another, RemedyBG sessions are properly retained and reloaded
+    - Fixed a bug when we do not receive events right after RemedyBG session opens
+    - Fixed a bug with 10x debug state not updated properly when RemedyBG is closed by user
+    - `StartProcessExtraCommand` and `StopProcessExtraCommand` now receives several commands, semicolon separated
+
+  0.11.7
+    - Minor cleanups
+
+  0.11.6
+    - Removed start_after_build workaround. Since 10x is now getting debugger state and starting the debugger correctly after build itself
+    - Getting better in sync with 10x by calling OnDebuggerStarted/OnDebuggerStopped/OnDebuggerPaused/OnDebuggerResumed functions
+
+  0.11.5
+    - Now BringToForegroundWindow is only called when we are not stepping
+    - Fixed the arrow icon not disappearing when executable is stopped
+    - Fixed StepOut events not acting accordingly
+    
   0.11.4
     - Added StepIn/StepOut/StepOver callbacks to hook them with new 10x commands
 
@@ -164,7 +190,7 @@ History:
 
 from enum import Enum, IntEnum
 from optparse import Option
-import win32file, win32pipe, pywintypes, win32api, win32gui, ctypes.wintypes
+import win32file, win32pipe, pywintypes, win32api, ctypes.wintypes
 import io, os, ctypes, time, typing, subprocess
 import json
 
@@ -211,11 +237,6 @@ class RDBG_Options():
             self.keep_session = True
         else:
             self.keep_session = False
-
-        if  Editor.GetSetting("BuildBeforeStartDebugging") and Editor.GetSetting("BuildBeforeStartDebugging").lower() == 'true':
-            self.build_before_debug = True
-        else:
-            self.build_before_debug = False
 
         if  Editor.GetSetting("StopDebuggingOnBuild") and Editor.GetSetting("StopDebuggingOnBuild").lower() == 'true':
             self.stop_debug_on_build = True
@@ -332,7 +353,6 @@ class RDBG_Session:
         self.process:subprocess.Popen = None
         self.cmd_pipe:RDBG_HANDLE = None
         self.event_pipe:RDBG_HANDLE = None
-        self.run_after_build:bool = False
         self.last_poll_time:float = 0
         self.ignore_next_remove_breakpoint:bool = False
         self.breakpoints = {}    # key=10x breakpoint id
@@ -341,6 +361,7 @@ class RDBG_Session:
         self.active_project:str = ""    # Format: project_path;config;platform
         self.session_refs = []  # contains remedybg session filepath for each project config (see active_project formatting)
         self.rdbg_current_session_filepath = None
+        self.first_start = True
 
         workspace_name:str = os.path.basename(Editor.GetWorkspaceFilename())
         self.update_active_project()
@@ -444,6 +465,8 @@ class RDBG_Session:
         elif cmd == RDBG_Command.RESTART_DEBUGGING:
             pass
         elif cmd == RDBG_Command.CONTINUE_EXECUTION:
+            pass
+        elif cmd == RDBG_Command.BRING_DEBUGGER_TO_FOREGROUND:
             pass
         elif cmd == RDBG_Command.RUN_TO_FILE_AT_LINE:
             filepath:str = cmd_args['filename']
@@ -549,9 +572,12 @@ class RDBG_Session:
                             address_expression:str = out_buffer.read(int.from_bytes(out_buffer.read(2), 'little')).decode('utf-8')
                             num_bytes:int = int.from_bytes(out_buffer.read(1), 'little')
                             access_kind:int = int.from_bytes(out_buffer.read(1), 'little')                    
-                return bps                   
-
+                return bps  
         else:
+            # TODO: we have to ignore this error for now. because when RemedyBG is not currently focused, we will get an error
+            if cmd == RDBG_Command.BRING_DEBUGGER_TO_FOREGROUND:
+                return 1
+            
             print('RDBG: ' + str(cmd) + ' failed')
             if result_code == RDBG_CommandResult.FAILED_OPENING_FILE:
                 print('RDBG: Error opening file')
@@ -616,6 +642,41 @@ class RDBG_Session:
 
         return None
 
+    def open_existing(self)->bool:
+        # first check if we have already spawned the process and it's still alive (poll)
+        global gProcessCache
+        if self.name not in gProcessCache:
+            return False
+        self.process = gProcessCache[self.name]
+        if self.process.poll() is not None:
+            del gProcessCache[self.name]
+            return False
+
+        try:
+            assert self.cmd_pipe == None
+            name = RDBG_PREFIX + self.name
+            self.cmd_pipe = win32file.CreateFile(name, win32file.GENERIC_READ|win32file.GENERIC_WRITE, 0, None, win32file.OPEN_EXISTING, 0, None)
+            win32pipe.SetNamedPipeHandleState(self.cmd_pipe, win32pipe.PIPE_READMODE_MESSAGE, None, None)
+            
+            assert self.event_pipe == None
+            name = name + '-events'
+            self.event_pipe = win32file.CreateFile(name, win32file.GENERIC_READ|256, 0, None, win32file.OPEN_EXISTING, 0, None)
+            win32pipe.SetNamedPipeHandleState(self.event_pipe, win32pipe.PIPE_READMODE_MESSAGE, None, None)
+
+            print("RDBG: Connection re-established")
+
+            self.sync_breakpoints(two_way=False)
+            return True
+        except:
+            if self.cmd_pipe:
+                win32file.CloseHandle(self.cmd_pipe)
+                self.cmd_pipe = None
+
+            if self.event_pipe is not None:
+                win32file.CloseHandle(self.event_pipe)
+                self.event_pipe = None            
+            return False
+
     def open(self)->bool:
         try:
             self.load_session_ref()
@@ -665,8 +726,7 @@ class RDBG_Session:
             wait_time:float = 0.1
             for retry in range(0, 5):
                 try:
-                    self.cmd_pipe = win32file.CreateFile(name, win32file.GENERIC_READ|win32file.GENERIC_WRITE, \
-                        0, None, win32file.OPEN_EXISTING, 0, None)
+                    self.cmd_pipe = win32file.CreateFile(name, win32file.GENERIC_READ|win32file.GENERIC_WRITE, 0, None, win32file.OPEN_EXISTING, 0, None)
                 except pywintypes.error:
                     time.sleep(wait_time)
                     wait_time = wait_time*2.0
@@ -731,8 +791,10 @@ class RDBG_Session:
 
         Editor.ClearStatusBarColour()
         Editor.ClearDebuggerStepLine()
+        Editor.OnDebuggerStopped()
 
         self.target_state:RDBG_TargetState = RDBG_TargetState.NONE
+        self.first_start = True
         print("RDBG: Connection closed")
 
     def unbind_session_file(self):
@@ -748,11 +810,14 @@ class RDBG_Session:
 
     def run(self):
         global gOptions
-        
         if self.cmd_pipe is not None:
             state:RDBG_TargetState = self.send_command(RDBG_Command.GET_TARGET_STATE)
             if state == RDBG_TargetState.NONE:
-                self.send_command(RDBG_Command.START_DEBUGGING)
+                r = self.send_command(RDBG_Command.START_DEBUGGING)
+                if r and self.first_start:
+                    self.first_start = False
+                    self.update()
+
             elif state == RDBG_TargetState.SUSPENDED:
                 self.send_command(RDBG_Command.CONTINUE_EXECUTION)
             elif state == RDBG_TargetState.EXECUTING:
@@ -782,6 +847,7 @@ class RDBG_Session:
     def update(self)->bool:
         global gOptions
         global gOptionsOverride
+        global gProcessCache
 
         tm:float = time.time()
  
@@ -802,6 +868,7 @@ class RDBG_Session:
             # Check if the active config/project has changed
             if self.update_active_project():
                 if gOptions.keep_session:
+                    gProcessCache[self.name] = self.process
                     self.process = None
                 else:
                     print('RDBG: Active project changed. Closing session...')
@@ -857,23 +924,37 @@ class RDBG_Session:
                         filename:str = event_buffer.read(int.from_bytes(event_buffer.read(2), 'little')).decode('utf-8')
                         line:int = int.from_bytes(event_buffer.read(4), 'little')
                         reason:RDBG_SourceLocChangedReason = int.from_bytes(event_buffer.read(4), 'little')
+
                         if reason != RDBG_SourceLocChangedReason.DRIVER:
-                            Editor.SetDebuggerStepLine(filename, line-1) # convert to index-based
+                            filename_win = filename
                             filename = filename.replace('\\', '/')
                             if reason == RDBG_SourceLocChangedReason.BREAKPOINT_HIT or \
                                reason == RDBG_SourceLocChangedReason.EXCEPTION_HIT or \
                                reason == RDBG_SourceLocChangedReason.STEP_OVER or \
                                reason == RDBG_SourceLocChangedReason.STEP_IN or  \
+                               reason == RDBG_SourceLocChangedReason.STEP_OUT or \
                                reason == RDBG_SourceLocChangedReason.NON_USER_BREAKPOINT or \
                                reason == RDBG_SourceLocChangedReason.DEBUG_BREAK:
-                                if reason != RDBG_SourceLocChangedReason.EXCEPTION_HIT:
-                                    Editor.SetStatusBarColour((202, 131, 0))
-                                else:
-                                    Editor.SetStatusBarColour((145, 18, 18))
+                                
+                                Editor.SetDebuggerStepLine(filename_win, line-1) # convert to index-based
+                                
+                                if reason != RDBG_SourceLocChangedReason.EXCEPTION_HIT: Editor.SetStatusBarColour((202, 131, 0))
+                                else: Editor.SetStatusBarColour((145, 18, 18))
                                 
                                 self.target_state = RDBG_TargetState.SUSPENDED
-                                if gOptions.bring_to_foreground_on_suspend:
+                                Editor.OnDebuggerPaused()
+
+                                # Bring to foreground only if we are not stepping
+                                if gOptions.bring_to_foreground_on_suspend and \
+                                    (reason != RDBG_SourceLocChangedReason.STEP_OVER and \
+                                     reason != RDBG_SourceLocChangedReason.STEP_IN and \
+                                     reason != RDBG_SourceLocChangedReason.STEP_OUT):
                                     Editor.SetForegroundWindow()
+                                    self.send_command(RDBG_Command.BRING_DEBUGGER_TO_FOREGROUND)
+                            elif filename:
+                                Editor.OpenFile(filename)
+                                Editor.SetCursorPos((0, line-1)) # convert to index-based
+
                     elif event_type == RDBG_EventType.BREAKPOINT_MODIFIED:
                         # used for enabling/disabling breakpoints, we don't have that now
                         pass
@@ -881,33 +962,35 @@ class RDBG_Session:
                         exit_code:int = int.from_bytes(event_buffer.read(4), 'little')
                         print('RDBG: Debugging terminated with exit code:', exit_code)
                         self.target_state = RDBG_TargetState.NONE
+                        Editor.OnDebuggerStopped()
                         Editor.ClearStatusBarColour()
                         Editor.ClearDebuggerStepLine()
-
-                        if not gOptions.stop_debug_on_build:
-                            gOptionsOverride = True
-                            Editor.RemoveSettingOverride('BuildBeforeStartDebugging')
-                            gOptionsOverride = False
 
                         if gOptions.stop_debug_command and gOptions.stop_debug_command != '':
                             print('RDBG: Execute:', gOptions.stop_debug_command)
                             Editor.ExecuteCommand(gOptions.stop_debug_command)
+                            cmds = gOptions.stop_debug_command.split(';')
+                            for cmd in cmds:
+                                if cmd.strip() != '':
+                                    Editor.ExecuteCommand(cmd)
+
                     elif event_type == RDBG_EventType.TARGET_STARTED:
                         print('RDBG: Debugging started')
                         self.target_state = RDBG_TargetState.EXECUTING
+                        Editor.OnDebuggerStarted()
                         Editor.SetStatusBarColour((202, 81, 0))
-
-                        if not gOptions.stop_debug_on_build:
-                            gOptionsOverride = True
-                            Editor.OverrideSetting('BuildBeforeStartDebugging', 'false')
-                            gOptionsOverride = False
 
                         if gOptions.start_debug_command and gOptions.start_debug_command != '':
                             print('RDBG: Execute:', gOptions.start_debug_command)
-                            Editor.ExecuteCommand(gOptions.start_debug_command)
+                            cmds = gOptions.start_debug_command.split(';')
+                            for cmd in cmds:
+                                if cmd.strip() != '':
+                                    Editor.ExecuteCommand(cmd)
                     elif event_type == RDBG_EventType.TARGET_CONTINUED:
+                        Editor.ClearDebuggerStepLine()
                         Editor.SetStatusBarColour((202, 81, 0))
                         self.target_state = RDBG_TargetState.EXECUTING
+                        Editor.OnDebuggerResumed()
 
             except win32api.error as pipe_error:
                 print('RDBG:', pipe_error)
@@ -916,13 +999,15 @@ class RDBG_Session:
             
         return True
 
-def RDBG_StartDebugging():
+def RDBG_StartDebugging(run_after_open = True):
     global gSession
     global gOptions
+    global gProcessCache
 
     if gSession is not None:
         if gSession.update_active_project():
             if gOptions.keep_session:
+                gProcessCache[gSession.name] = gSession.process
                 gSession.process = None
             else:
                 print('RDBG: Project config/platform changed. Restarting RemedyBG ...')
@@ -930,17 +1015,8 @@ def RDBG_StartDebugging():
             gSession.close()
             gSession = None
             RDBG_StartDebugging()
-
-        gSession.send_command(RDBG_Command.SET_BRING_TO_FOREGROUND_ON_SUSPENDED, enabled=gOptions.bring_to_foreground_on_suspend)
-
-        # poll for debugger state. if we are in the middle of debugging, then continue, otherwise run/build-run
-        state:RDBG_TargetState = gSession.send_command(RDBG_Command.GET_TARGET_STATE)
-        if state == RDBG_TargetState.NONE:
-            if gOptions.build_before_debug:
-                gSession.run_after_build = True    # Checking this in BuildFinished callback
-            else:
-                gSession.run()
-        elif state == RDBG_TargetState.SUSPENDED:
+        
+        if run_after_open:
             gSession.run()
     else:
         if Editor.GetWorkspaceFilename() == '':
@@ -950,11 +1026,8 @@ def RDBG_StartDebugging():
         print('RDBG: Workspace: ' + Editor.GetWorkspaceFilename())
 
         gSession = RDBG_Session()
-        if gSession.open():
-            gSession.send_command(RDBG_Command.SET_BRING_TO_FOREGROUND_ON_SUSPENDED, enabled=gOptions.bring_to_foreground_on_suspend)
-            if gOptions.build_before_debug:
-                gSession.run_after_build = True    # Checking this in BuildFinished callback
-            else:
+        if gSession.open_existing() or gSession.open():
+            if run_after_open:
                 gSession.run()			
         else:
             gSession = None
@@ -966,6 +1039,12 @@ def RDBG_StopDebugging():
 
 def RDBG_Reset():
     global gSession
+    global gOptionsOverride
+    
+    Editor.ClearStatusBarColour()
+    Editor.ClearDebuggerStepLine()
+    gOptionsOverride = False
+
     if gSession is not None:
         gSession.stop()
         gSession.close()
@@ -974,7 +1053,9 @@ def RDBG_Reset():
 def RDBG_RestartDebugging():
     global gSession
     if gSession is not None:
-        gSession.send_command(RDBG_Command.RESTART_DEBUGGING)		
+        gSession.send_command(RDBG_Command.RESTART_DEBUGGING)	
+    else:
+        RDBG_StartDebugging()	
 
 def RDBG_RunToCursor():
     global gSession
@@ -999,11 +1080,18 @@ def RDBG_StepOver():
     global gSession
     if gSession is not None:
         gSession.send_command(RDBG_Command.STEP_OVER_BY_LINE)
+    else:
+        RDBG_StartDebugging(run_after_open=False)
+        RDBG_StepOver()
 
 def RDBG_StepOut():
     global gSession
     if gSession is not None:
         gSession.send_command(RDBG_Command.STEP_OUT)
+    else:
+        RDBG_StartDebugging(run_after_open=False)
+        RDBG_StepOver()
+
 
 def RDBG_AddSelectionToWatch():
     global gSession
@@ -1013,19 +1101,7 @@ def RDBG_AddSelectionToWatch():
             gSession.send_command(RDBG_Command.ADD_WATCH, expr=selection)
 
 def RDBG_OpenDebugger():
-    global gSession
-    if Editor.GetWorkspaceFilename() == '':
-        Editor.ShowMessageBox(RDBG_TITLE, 'No Workspace is opened for debugging')
-        return
-
-    if not gSession:
-        print('RDBG: Workspace: ' + Editor.GetWorkspaceFilename())
-
-        gSession = RDBG_Session()
-        if gSession.open():
-            gSession.send_command(RDBG_Command.SET_BRING_TO_FOREGROUND_ON_SUSPENDED, enabled=gOptions.bring_to_foreground_on_suspend)
-        else:
-            gSession = None
+    RDBG_StartDebugging(run_after_open=False)
 
 def RDBG_UnbindSession():
     global gSession
@@ -1056,14 +1132,6 @@ def _RDBG_UpdateBreakpoint(id, filename, line):
     global gSession
     if gSession is not None:
         gSession.send_command(RDBG_Command.UPDATE_BREAKPOINT_LINE, id=id, line=line)
-
-def _RDBG_BuildFinished(result):
-    global gSession
-    
-    if gSession is not None:
-        if gSession.run_after_build and result:
-            gSession.run()	
-        gSession.run_after_build = False
 
 def _RDBG_Update():
     global gSession
@@ -1124,7 +1192,6 @@ def InitialiseRemedy():
     Editor.AddBreakpointUpdatedFunction(_RDBG_UpdateBreakpoint)
 
     Editor.AddOnWorkspaceOpenedFunction(_RDBG_WorkspaceOpened)
-    Editor.AddBuildFinishedFunction(_RDBG_BuildFinished)
     Editor.AddUpdateFunction(_RDBG_Update)
     Editor.AddOnSettingsChangedFunction(_RDBG_SettingsChanged)
 
@@ -1141,7 +1208,7 @@ def InitialiseRemedy():
 gSession:RDBG_Session = None
 gOptions:RDBG_Options = None
 gOptionsOverride:bool = False
-gMainWindowHandle = None
+gProcessCache = {} # key = self.name, value = subprocess.Popen. Only populate this with KeepSessionOnActiveChange setting
 
 Editor.CallOnMainThread(InitialiseRemedy)
 
