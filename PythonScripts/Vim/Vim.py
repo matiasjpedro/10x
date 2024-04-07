@@ -323,9 +323,9 @@ def AddNewlineToClipboard():
             win32clipboard.CloseClipboard()
             break
         except Exception as ex:
-            if err.winerror == 5:  # access denied
+            if ex.winerror == 5:  # access denied
                 time.sleep( 0.01 )
-            elif err.winerror == 1418:  # doesn't have board open
+            elif ex.winerror == 1418:  # doesn't have board open
                 pass
             else:
                 pass
@@ -2390,6 +2390,18 @@ def HandleCommandModeKey(key, shift, control, alt):
     elif key == "Tab":
         N10X.Editor.ExecuteCommand("NextPanelTab")
    
+    elif key == "A" and control:
+        pass # todo
+   
+    elif key == "V" and control:
+        pass # todo
+   
+    elif key == "Z" and control:
+        N10X.Editor.ExecuteCommand("Undo")
+
+    elif key == "X" and control and not shift:
+        pass
+
     elif key == "W" and control:
         g_PaneSwap = True
 
@@ -2496,6 +2508,13 @@ def HandleInsertModeKey(key, shift, control, alt):
         MoveCursorPos(x_delta=1, max_offset=0)
         return True
     
+    # disable keys that aren't implemented yet or shouldn't do anything
+    if (key == "A" and control) or \
+       (key == "X" and control and not shift) or \
+       (key == "Y" and control) or \
+       (key == "V" and control):
+        return True
+
     if not g_PerformingDot:
         RecordKey(g_InsertBuffer, key, shift, control, alt)
     return False
