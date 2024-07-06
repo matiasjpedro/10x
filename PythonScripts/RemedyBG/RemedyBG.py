@@ -746,18 +746,17 @@ class RDBG_Session:
                 args = gOptions.executable + ' --servername ' + self.name + ' "' + session_filepath + '"'
                 work_dir = self.get_work_dir()
             else:
+                debug_cmd = Editor.GetDebugCommand()
 #----MPEDIT-EDIT
-                #debug_cmd = Editor.GetDebugCommand()
-                #debug_args = Editor.GetDebugCommandArgs()
+                #debug_args = Editor.GetDebugCommandArgs().strip()
                 debug_args = Editor.GetDebugCommandArgs() + " " + Editor.GetSetting("Custom.ClientOneArgs") 
-
-                #if debug_cmd == '':
-                    #Editor.ShowMessageBox(RDBG_TITLE, 'Debug command is empty. Perhaps active project is not set in workspace tree?')
-                    #return False
 #----MPEDIT-
+                if debug_cmd == '':
+                    Editor.ShowMessageBox(RDBG_TITLE, 'Debug command is empty. Perhaps active project is not set in workspace tree?')
+                    return False
 
                 work_dir = self.get_work_dir()
-                args = gOptions.executable + ' --servername ' + self.name + ' "' + Editor.GetWorkspaceExePath() + '"' + (' ' if debug_args!='' else '') + debug_args
+                args = gOptions.executable + ' --servername ' + self.name + ' "' + debug_cmd + '"' + (' ' if debug_args!='' else '') + debug_args
 
             if work_dir != '' and not os.path.isdir(work_dir):
                 Editor.ShowMessageBox(RDBG_TITLE, 'Debugger working directory is invalid: ' + work_dir)
@@ -1237,10 +1236,8 @@ def _RDBG_DebugCommandLineChanged():
         configs = gSession.send_command(RDBG_Command.GET_SESSION_CONFIGS)
         for config in configs:
             if config['id'] == config_id:
+                config['command'] = Editor.GetDebugCommand()
 #----MPEDIT-EDIT
-                #config['command'] = Editor.GetDebugCommand()
-                config['command'] = Editor.GetWorkspaceExePath()
-
                 #config['command_args'] = Editor.GetDebugCommandArgs() 
                 config['command_args'] = Editor.GetDebugCommandArgs() + " " +  Editor.GetSetting("Custom.ClientOneArgs")
 
