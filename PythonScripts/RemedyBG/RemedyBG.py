@@ -746,18 +746,15 @@ class RDBG_Session:
                 args = gOptions.executable + ' --servername ' + self.name + ' "' + session_filepath + '"'
                 work_dir = self.get_work_dir()
             else:
-                debug_cmd = Editor.GetDebugCommand().strip()
-                #debug_cmd = Editor.GetDebugCommand().strip()
-                #debug_args = Editor.GetDebugCommandArgs().strip()
-#----MPEDIT-MyCustomShortcuts
-                common_args = Editor.GetSetting("Custom.ClientCommonArgs")
-                client_args = Editor.GetSetting("Custom.ClientOneArgs") 
-                debug_args = "{} {}".format(common_args, client_args).strip()
-#----MPEDIT-
+#----MPEDIT-EDIT
+                #debug_cmd = Editor.GetDebugCommand()
+                #debug_args = Editor.GetDebugCommandArgs()
+                debug_args = Editor.GetDebugCommandArgs() + " " + Editor.GetSetting("Custom.ClientOneArgs") 
 
-                if debug_cmd == '':
-                    Editor.ShowMessageBox(RDBG_TITLE, 'Debug command is empty. Perhaps active project is not set in workspace tree?')
-                    return False
+                #if debug_cmd == '':
+                    #Editor.ShowMessageBox(RDBG_TITLE, 'Debug command is empty. Perhaps active project is not set in workspace tree?')
+                    #return False
+#----MPEDIT-
 
                 work_dir = self.get_work_dir()
                 args = gOptions.executable + ' --servername ' + self.name + ' "' + Editor.GetWorkspaceExePath() + '"' + (' ' if debug_args!='' else '') + debug_args
@@ -1240,13 +1237,20 @@ def _RDBG_DebugCommandLineChanged():
         configs = gSession.send_command(RDBG_Command.GET_SESSION_CONFIGS)
         for config in configs:
             if config['id'] == config_id:
-                config['command'] = Editor.GetDebugCommand()
-                config['command_args'] = Editor.GetDebugCommandArgs()
-                config['working_dir'] = Editor.GetDebugCommandCwd()
+#----MPEDIT-EDIT
+                #config['command'] = Editor.GetDebugCommand()
+                config['command'] = Editor.GetWorkspaceExePath()
+
+                #config['command_args'] = Editor.GetDebugCommandArgs() 
+                config['command_args'] = Editor.GetDebugCommandArgs() + " " +  Editor.GetSetting("Custom.ClientOneArgs")
+
+                #config['working_dir'] = Editor.GetDebugCommandCwd()
+                config['working_dir'] = gSession.get_work_dir()
+#----MPEDIT-
                 gSession.send_command(RDBG_Command.MODIFY_SESSION_CONFIG, 
                                       config_id=config_id,
                                       command = config['command'],
-                                      command_args = Editor.GetDebugCommandArgs(),
+                                      command_args = config['command_args'],
                                       working_dir = config['working_dir'],
                                       env_vars = config['env_vars'],
                                       inherit_environment_vars_from_parent = config['inherit_environment_vars_from_parent'],
