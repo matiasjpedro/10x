@@ -21,7 +21,8 @@ def QuickPane():
         N10X.Editor.ExecuteCommand("MovePanelLeft")
         N10X.Editor.ExecuteCommand("SetRowCount1")
         N10X.Editor.ExecuteCommand("SetColumnCount1")
-        N10X.Editor.ExecuteCommand("CloseAllOtherTabs")
+        N10X.Editor.SetFocusedTab(100)
+        N10X.Editor.CloseFile()
     else:
         N10X.Editor.ExecuteCommand("SetColumnCount2")
         N10X.Editor.ExecuteCommand("DuplicatePanelRight")
