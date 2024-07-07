@@ -2896,14 +2896,6 @@ def OnInterceptKey(key, shift, control, alt):
             case Mode.SUSPENDED:
                 supress = HandleSuspendedModeKey(key, shift, control, alt)
         UpdateCursorMode()
-    else:
-#----MPEDIT-FixForTabNotWorking
-        if key == "Tab" and shift:
-            N10X.Editor.ExecuteCommand("PrevPanelTab")
-
-        elif key == "Tab":
-            N10X.Editor.ExecuteCommand("NextPanelTab")
-#----MPEDIT-
         
     return supress
 

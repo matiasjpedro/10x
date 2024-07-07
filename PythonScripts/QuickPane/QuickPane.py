@@ -15,14 +15,15 @@ import N10X
 
 #------------------------------------------------------------------------
 # Switches to single column
-def QuickPane1():
-    N10X.Editor.ExecuteCommand("MovePanelLeft")
-    N10X.Editor.ExecuteCommand("SetRowCount1")
-    N10X.Editor.ExecuteCommand("SetColumnCount1")
-    N10X.Editor.ExecuteCommand("CloseAllOtherTabs")
-                                                        
-# Switches to dual column and duplicates the current tab into the other panel.
-def QuickPane2():
-    N10X.Editor.ExecuteCommand("SetColumnCount2")
-    N10X.Editor.ExecuteCommand("DuplicatePanelRight")
+def QuickPane():
+    x, y = N10X.Editor.GetCursorPos()
+    if (N10X.Editor.GetColumnCount() == 2):
+        N10X.Editor.ExecuteCommand("MovePanelLeft")
+        N10X.Editor.ExecuteCommand("SetRowCount1")
+        N10X.Editor.ExecuteCommand("SetColumnCount1")
+        N10X.Editor.ExecuteCommand("CloseAllOtherTabs")
+    else:
+        N10X.Editor.ExecuteCommand("SetColumnCount2")
+        N10X.Editor.ExecuteCommand("DuplicatePanelRight")
 
+    N10X.Editor.SetCursorPos((x, y))
