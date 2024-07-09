@@ -803,6 +803,8 @@ class RDBG_Session:
             else:
                 print("RDBG: Connection established")
                 self.sync_breakpoints(two_way=False)
+            RDBG_GoToCursor()
+            
         except FileNotFoundError as not_found:
             Editor.ShowMessageBox(RDBG_TITLE, str(not_found) + ': ' + gOptions.executable)
             return False
@@ -1109,14 +1111,14 @@ def RDBG_RunToCursor():
     if gSession is not None:
         filename:str = Editor.GetCurrentFilename()
         if filename != '':
-            gSession.send_command(RDBG_Command.RUN_TO_FILE_AT_LINE, filename=filename, line=Editor.GetCursorPos()[1])
+            gSession.send_command(RDBG_Command.RUN_TO_FILE_AT_LINE, filename=filename, line=Editor.GetCursorPos()[1]+1)
 
 def RDBG_GoToCursor():
     global gSession
     if gSession is not None:
         filename:str = Editor.GetCurrentFilename()
         if filename != '':
-            gSession.send_command(RDBG_Command.GOTO_FILE_AT_LINE, filename=filename, line=Editor.GetCursorPos()[1])
+            gSession.send_command(RDBG_Command.GOTO_FILE_AT_LINE, filename=filename, line=Editor.GetCursorPos()[1]+1)
 
 def RDBG_StepInto():
     global gSession
