@@ -2371,14 +2371,6 @@ def HandleCommandModeKey(key, shift, control, alt):
             N10X.Editor.ClearSelection()
         SetCursorPos(x=x, y=y)
 #----MPEDIT-MyCustomShortcuts
-    elif key == "H" and shift:
-        pos = N10X.Editor.GetCursorPos()
-        N10X.Editor.ExecuteCommand("DuplicatePanelLeft")
-        N10X.Editor.SetCursorPos(pos)
-    elif key == "L" and shift:
-        pos = N10X.Editor.GetCursorPos()
-        N10X.Editor.ExecuteCommand("DuplicatePanelRight")
-        N10X.Editor.SetCursorPos(pos)
     elif key == "H" and alt:
         MoveToFirstNonWhitespace()
     elif key == "L" and alt:
