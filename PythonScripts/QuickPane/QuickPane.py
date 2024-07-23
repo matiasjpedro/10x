@@ -18,13 +18,12 @@ import N10X
 def QuickPane():
     x, y = N10X.Editor.GetCursorPos()
     if (N10X.Editor.GetColumnCount() == 2):
+        N10X.Editor.CloseAllPanelsInColumn(1)
         N10X.Editor.ExecuteCommand("MovePanelLeft")
         N10X.Editor.ExecuteCommand("SetRowCount1")
         N10X.Editor.ExecuteCommand("SetColumnCount1")
-        N10X.Editor.SetFocusedTab(100)
-        N10X.Editor.CloseFile()
     else:
         N10X.Editor.ExecuteCommand("SetColumnCount2")
         N10X.Editor.ExecuteCommand("DuplicatePanelRight")
+        N10X.Editor.SetCursorPos((x, y))
 
-    N10X.Editor.SetCursorPos((x, y))
